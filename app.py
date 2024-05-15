@@ -1,7 +1,7 @@
 import os
 import pathlib
 
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, make_response, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, session #, jsonify, make_response, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.sql import func
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
@@ -9,8 +9,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import datetime
 import random
+from distutils.log import Log
 import ssl
-
+from flask_mail import Mail, Message
+import logging
 from Crypto.Cipher import AES
 import hashlib
 from Crypto.Util.Padding import pad, unpad
@@ -21,11 +23,21 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'dengyi'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['MAIL_SERVER'] = 'smtp.example.com'
+app.config['MAIL_PORT'] = 465
+app.config['MAIL_USERNAME'] = 'your_username'
+app.config['MAIL_PASSWORD'] = 'your_password'
+app.config['MAIL_USE_TLS'] = False
+app.config['MAIL_USE_SSL'] = True
+
+logging.basicConfig(filename='app.log', level=logging.DEBUG)
 
 # context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 # context.load_cert_chain('ssl_cert.crt','ssl_key.key')
 
 db = SQLAlchemy()
+login_manager = LoginManager(app)
+mail = Mail(app)
 db.init_app(app)
 
 with app.app_context():
@@ -126,6 +138,15 @@ def signup():
             db.session.commit()
             login_user(new_user, remember=True)
             flash('註冊成功', category='success')
+            # 新增資料庫記錄
+            log = Log(user_id=new_user.id, action='Signup', timestamp=datetime.now())
+            logging.info('User {} registered.'.format(new_user.user))
+            db.session.add(log)
+            db.session.commit()
+            # 發送註冊通知郵件
+            msg = Message('Registration Successful', recipients=[email])
+            msg.body = 'Thank you for registering!'
+            mail.send(msg)
             return redirect(url_for('login'))
 
 
@@ -141,16 +162,32 @@ def login():
             if check_password_hash(exist.password, password):
                 flash('登入成功', category='success')
                 login_user(exist, remember=True)
+                # 新增登入記錄
+                log = Log(user_id=exist.id, action='Login', timestamp=datetime.now())
+                logging.info('User {} logged in.'.format(exist.user))
+                db.session.add(log)
+                db.session.commit()
+                # 發送登入通知郵件
+                msg = Message('Login Notification', recipients=[email])
+                msg.body = 'You have logged in successfully.'
+                mail.send(msg)
                 return redirect(url_for('index'))
             else:
                 flash('密碼錯誤', category='error')
+                logging.warning('Login failed for user {}.'.format(email))
         else:
             flash('電子信箱錯誤', category='error')
+            logging.warning('Login failed for user {}.'.format(email))
     return render_template('login.html')
 
 @app.route('/logout')
 @login_required
 def logout():
+    # 新增登出記錄
+    log = Log(user_id=current_user.id, action='Logout', timestamp=datetime.now())
+    logging.info('User {} logged out.'.format(current_user.user))
+    db.session.add(log)
+    db.session.commit()
     logout_user()
     return render_template("index.html")
 
@@ -161,12 +198,21 @@ def post():
         text = request.form.get("text")
         if not text:
             flash('請輸入內容', category='error')
+            logging.error('Failed to add, delete, or modify a post.')
+        elif 'password' in text:  # 檢查是否輸入了類似密碼的文字
+            # 要求再三確認
+            return render_template('confirm.html', text=text, action='post')
         else:
             encrypted_text = encrypt_text(text)
             text_hash = get_hash(encrypted_text)
             decrypted_text = decrypt_text(encrypted_text)
             posts = Post(text=encrypted_text, text_hash=text_hash, user_id=current_user.id)
             db.session.add(posts)
+            db.session.commit()
+            # 新增貼文記錄
+            log = Log(user_id=current_user.id, action='Post', timestamp=datetime.now())
+            logging.debug('User {} added a new post.'.format(current_user.user))
+            db.session.add(log)
             db.session.commit()
             flash('新增成功', category='success')
             return redirect(url_for('index'))
@@ -179,12 +225,15 @@ def delete(id):
     if post:
         if current_user.id != post.user_id:
             flash('你沒有權限刪除', category='error')
+            logging.error('Failed to add, delete, or modify a post.')
         elif current_user.id == post.user_id:
             db.session.delete(post)
             db.session.commit()
             flash('刪除成功', category='success')
+            logging.debug('User {} deleted a post.'.format(current_user.user))
         else:
             flash('刪除失敗', category='error')
+            logging.error('Failed to add, delete, or modify a post.')
     return redirect(url_for('index'))
 
 @app.route('/edit-post/<id>', methods=['GET', 'POST'])
@@ -195,9 +244,11 @@ def edit(id):
         text = request.form.get("text")
         if current_user.id != post.user_id:
             flash('你沒有權限編輯', category='error')
+            logging.error('Failed to add, delete, or modify a post.')
         elif current_user.id == post.user_id:
             if not text:
                 flash('請輸入內容', category='error')
+                logging.error('Failed to add, delete, or modify a post.')
             else:
                 encrypted_text = encrypt_text(text)
                 text_hash = get_hash(encrypted_text)
@@ -205,6 +256,7 @@ def edit(id):
                 post.text_hash = text_hash
                 db.session.commit()
                 flash('編輯成功', category='success')
+                logging.debug('User {} edited a post.'.format(current_user.user))
                 return redirect(url_for('index'))
     return render_template('edit-post.html', post=post)
 
@@ -214,7 +266,12 @@ def comment(post_id):
     text = request.form.get("text")
     if request.method == 'POST':
         if not text:
+            logging.error('Failed to add or delete a comment.')
             flash('請輸入內容', category='error')
+        elif 'password' in text:  # 檢查是否輸入了類似密碼的文字
+            # 要求再三確認
+            logging.error('Failed to add or delete a comment.')
+            return render_template('confirm.html', text=text, action='comment')
         else:
             post = Post.query.get(post_id)
             if post:
@@ -224,8 +281,14 @@ def comment(post_id):
                 db.session.add(comment)
                 db.session.commit()
                 flash('新增成功', category='success')
+                # 新增留言記錄
+                log = Log(user_id=current_user.id, action='Comment', timestamp=datetime.now())
+                logging.debug('User {} added a new comment.'.format(current_user.user))
+                db.session.add(log)
+                db.session.commit()
             else:
                 flash('新增失敗', category='error')
+                logging.error('Failed to add or delete a comment.')
     return redirect(url_for('index'))
 
 @app.route('/delete-comment/<id>')
@@ -234,12 +297,15 @@ def delete_comment(id):
     comment = Comment.query.filter_by(id=id).first()
     if comment:
         if current_user.id != comment.user_id:
+            logging.error('Failed to add or delete a comment.')
             flash('你沒有權限刪除', category='error')
         elif current_user.id == comment.user_id:
             db.session.delete(comment)
             db.session.commit()
+            logging.debug('User {} deleted a comment.'.format(current_user.user))
             flash('刪除成功', category='success')
         else:
+            logging.error('Failed to add or delete a comment.')
             flash('刪除失敗', category='error')
     return redirect(url_for('index'))
 
@@ -260,5 +326,32 @@ app.jinja_env.globals.update(decrypt_text=decrypt_text)
 app.config.update(
     OAUTHLIB_INSECURE_TRANSPORT='1'
 )
+
+@app.route('/confirm/<confirmed>', methods=['GET', 'POST'])
+def confirmed(confirmed):
+    if confirmed == 'yes':
+        text = session.get('text')
+        action = session.get('action')
+        if action == 'post':
+            # 新增貼文記錄
+            log = Log(user_id=current_user.id, action='Post', timestamp=datetime.now())
+            db.session.add(log)
+            db.session.commit()
+            flash('貼文成功', category='success')
+        elif action == 'comment':
+            # 新增留言記錄
+            log = Log(user_id=current_user.id, action='Comment', timestamp=datetime.now())
+            db.session.add(log)
+            db.session.commit()
+            flash('留言成功', category='success')
+    elif confirmed == 'no':
+        flash('取消操作', category='info')
+    return redirect(url_for('index'))
+
+# @app.before_first_request
+# def create_tables():
+#     app.before_request_funcs[None].remove(create_tables)
+#     db.create_all()
+
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5001)
