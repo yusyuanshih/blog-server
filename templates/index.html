@@ -6,42 +6,37 @@
 {% for post in posts %}
 <div class="card border-light">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <i class="fa-solid fa-user"> {{ post.database.user }}</i>
+    <i class="fa-solid fa-user"> {{ post.post.database.user }}</i>
         <div class="btn-group">
             <button type="button" class="btn btn-sm btn-dark dropdown-toggle" data-bs-toggle="dropdown" >
             </button>
             <ul class="dropdown-menu">
-                <li><a class="dropdown-item" href="/edit-post/{{post.id}}">編輯</a></li>
-                <li><a class="dropdown-item" href="/delete-post/{{post.id}}">刪除</a></li>
+                <li><a class="dropdown-item" href="/edit-post/{{post.post.id}}">編輯</a></li>
+                <li><a class="dropdown-item" href="/delete-post/{{post.post.id}}">刪除</a></li>
             </ul>
         </div>
     </div>
     <div class="card-body">
 
-        {% if filename %}
-            <div>
-               <img src="{{ url_for('display_image', filename=filename) }}">
-            </div>
-        {% endif %}
 
         <div class="card-text">
             {{ post.text }}
         </div>
         <br/>
-        {% for comment in post.comment %}
-        <font color="#6495ed"> {{comment.database.user }}: {{ comment.text }}</font>
+        {% for comment in post.post.comment %}
+        <font color="#6495ed">{{ comment.database.user }}: {{ decrypt_text(comment.text) }}</font>
         <br/>
         <p align="right"><a href="/delete-comment/{{comment.id}}"><button type="button" class="btn btn-light btn-sm">刪除</button></a></p>
         <font color="#6495ed"><p align="right">{{ comment.created }}</p></font>
         {% endfor %}
-        <form class="input-group mb-3" method="POST" action="/create-comment/{{post.id}}">
+        <form class="input-group mb-3" method="POST" action="{{ url_for('comment', post_id=post.post.id) }}">
             <input type="text" class="form-control" placeholder="留言" name="text" required>
             <input type="hidden" name="post_id" value="{{ post.id }}">
             <button class="btn btn-outline-secondary" type="submit" id="button-addon2">送出<i class="fa-solid fa-bone"></i></button>
         </form>
     </div>
     <div class="card-footer text-muted">
-        {{ post.created }}
+        {{ post.post.created }}
     </div>
 </div>
     <br/>
