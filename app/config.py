@@ -24,6 +24,10 @@ def get_env(key: str, default: Any | None = None, required: bool = True):
 
 CORS_ORIGINS = get_env("CORS_ORIGINS", "", False)
 
+# Google OAuth
+GOOGLE_CLIENT_ID = get_env("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = get_env("GOOGLE_CLIENT_SECRET")
+
 
 class Config:
     # Flask

@@ -21,14 +21,14 @@ class User(db.Model, UserMixin):
         unique=True,
         nullable=False,
     )
-    password = Column(
-        String(255),
-        nullable=False,
-    )
     name = Column(
         String(50),
         unique=True,
         nullable=False,
+    )
+    picture = Column(
+        String(255),
+        nullable=True,
     )
     created_at = Column(
         DateTime(timezone=True),

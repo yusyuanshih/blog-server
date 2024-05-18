@@ -13,7 +13,6 @@ app.config.from_object(Config)
 # logging.basicConfig(filename="app.log", level=logging.DEBUG)
 
 from app.extensions import (
-    login_manager,
     cors,
     db,
     limiter,
@@ -24,7 +23,6 @@ cors.init_app(app)
 db.init_app(app)
 limiter.init_app(app)
 mail.init_app(app)
-login_manager.init_app(app)
 
 # app.jinja_env.globals.update(decrypt_text=decrypt_text)
 

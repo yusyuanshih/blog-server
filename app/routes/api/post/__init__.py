@@ -2,14 +2,11 @@ import datetime
 import logging
 
 from flask import Blueprint
-from flask_login import (
-    login_required,
-    current_user,
-)
 from webargs import fields
 from webargs.flaskparser import use_kwargs
 
 from app.extensions.db import db
+from app.extensions.oauth import get_current_user, login_required
 from app.models import Post, Log, User, Comment, PostLike
 from app.utils.hash import get_hash
 from app.utils.cipher import encrypt, decrypt
@@ -44,14 +41,16 @@ def get_posts():
                         "author_id": comment.user.id,
                         "author_name": comment.user.name,
                         "created_at": comment.created_at,
+                        "author_picture": comment.user.picture,
                     }
                     for comment in post.comments
                 ],
                 "created_at": post.created_at,
                 "author_id": post.user.id,
                 "author_name": post.user.name,
+                "author_picture": post.user.picture,
                 "liked": any(
-                    like.user_id == current_user.id for like in post.post_likes
+                    like.user_id == get_current_user().id for like in post.post_likes
                 ),
                 "likes_count": len(post.post_likes),
             }
@@ -75,6 +74,8 @@ def create_post(text: str):
     # if "password" in text:  # 檢查是否輸入了類似密碼的文字
     #     # 要求再三確認
     #     return render_template("confirm.html", text=text, action="post")
+
+    current_user = get_current_user()
 
     text_iv, encrypted_text = encrypt(text)
     text_hash = get_hash(encrypted_text)
@@ -107,6 +108,8 @@ def delete_post(id: int):
 
     if post is None:
         return "找不到貼文", 404
+
+    current_user = get_current_user()
 
     if current_user.id != post.user_id:
         logging.error("Failed to add, delete, or modify a post.")
@@ -142,6 +145,8 @@ def edit_post(id: int, **kwargs):
     if post is None:
         return "找不到貼文", 404
 
+    current_user = get_current_user()
+
     if current_user.id != post.user_id:
         logging.error("Failed to add, delete, or modify a post.")
         return "你沒有權限編輯", 403
@@ -175,8 +180,11 @@ def like_post(id: int):
     if post is None:
         return "找不到貼文", 404
 
+    current_user = get_current_user()
+
     post_like: PostLike | None = PostLike.query.filter_by(
-        user_id=current_user.id, post_id=id
+        user_id=current_user.id,
+        post_id=id,
     ).first()
 
     if post_like is not None:
@@ -209,8 +217,11 @@ def dislike_post(id: int):
     if post is None:
         return "找不到貼文", 404
 
+    current_user = get_current_user()
+
     post_like: PostLike | None = PostLike.query.filter_by(
-        user_id=current_user.id, post_id=id
+        user_id=current_user.id,
+        post_id=id,
     ).first()
 
     if post_like is None:

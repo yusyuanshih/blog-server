@@ -1,14 +1,11 @@
 import logging
 
 from flask import Blueprint
-from flask_login import (
-    login_required,
-    current_user,
-)
 from webargs import fields
 from webargs.flaskparser import use_kwargs
 
 from app.extensions.db import db
+from app.extensions.oauth import get_current_user, login_required
 from app.models import Post, Comment, Log
 from app.utils.hash import get_hash
 from app.utils.cipher import encrypt, decrypt
@@ -30,6 +27,8 @@ def create_comment(post_id: int, text: str):
     if post is None:
         logging.error("Failed to add a comment.")
         return "找不到貼文", 404
+
+    current_user = get_current_user()
 
     text_iv, encrypted_text = encrypt(text)
     text_hash = get_hash(encrypted_text)
@@ -63,6 +62,8 @@ def delete_comment(id: int):
     if comment is None:
         logging.error("Failed to delete a comment.")
         return "找不到留言"
+    
+    current_user = get_current_user()
 
     if current_user.id != comment.user_id:
         logging.error("Failed to delete a comment.")
