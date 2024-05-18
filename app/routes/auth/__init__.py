@@ -16,6 +16,7 @@ from app.config import Config
 from app.extensions.db import db
 from app.extensions.mail import mail
 from app.models import User, Log
+from app.extensions.auth import googleAPI
 
 auth_blueprint = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -105,7 +106,8 @@ def login(email: str, password: str):
             "name": user.name,
         }
     )
-
+def oauth():
+    googleAPI
 
 @auth_blueprint.route("/logout", methods=["POST"])
 @login_required
